@@ -6,7 +6,6 @@ document.getElementById('pauseBtn').classList.remove('show');
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no">
 <title>RIMANAVE</title>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap');
 *,*::before,*::after{margin:0;padding:0;box-sizing:border-box;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
@@ -352,7 +351,7 @@ canvas{display:block;position:fixed;top:0;left:0;width:100%;height:100%}
 <div class="scr gone" id="lobbyScr">
   <div class="lobby-inner">
     <div class="lobby-title">ONLINE MULTIPLAYER</div>
-    <div class="lobby-sub">Relay via Supabase — works on any network<br>No WebRTC, no firewall issues</div>
+    <div class="lobby-sub">Relay via ntfy.sh — works on any network<br>No WebRTC · No accounts · Pure HTTPS</div>
     <div class="lobby-opts">
       <!-- HOST -->
       <div class="lobby-section" id="hostSection">
@@ -1518,20 +1517,19 @@ var lb1=document.getElementById('lb1');lb1.addEventListener('click',function(){N
 var lb2=document.getElementById('lb2');lb2.addEventListener('click',function(){NET.connected?lockInOnline(1):lockIn(1);});lb2.addEventListener('touchend',function(e){e.preventDefault();NET.connected?lockInOnline(1):lockIn(1);});
 
 // ═══════════════════════════════════════════════════════
-// SUPABASE REALTIME MULTIPLAYER
-// Pure WebSocket over wss:// port 443 — no WebRTC, no NAT issues
+// NTFY.SH RELAY MULTIPLAYER
+// Pure WebSocket/HTTPS pub-sub — no WebRTC, no NAT, no accounts
+// wss://ntfy.sh — open source, free, works on any network
 // ═══════════════════════════════════════════════════════
 
-// Public anon key for rimanave game — read-only Realtime Broadcast only
-var _SB_URL  = 'https://wlzqdogepeigzpqwxhkj.supabase.co';
-var _SB_KEY  = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndsenFkb2dlcGVpZ3pwcXd4aGtqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDUyMjcyMDAsImV4cCI6MjA2MDgwMzIwMH0.hfBFHYEbiwWxREyKmHVs4_XeGOjRQFQXMaBm8mSY1Yk';
+var NET = { wsRecv: null, role: null, connected: false, _myCode: null, _roomCode: null };
+var _NTFY = 'https://ntfy.sh';
+var _NTFY_WSS = 'wss://ntfy.sh';
+var _netLastSend = 0; // for rate limiting
 
-var _sb = null;
-var NET = { channel: null, role: null, connected: false, _myCode: null, _roomCode: null };
-
-function _sbClient() {
-  if (!_sb) _sb = supabase.createClient(_SB_URL, _SB_KEY, { realtime: { params: { eventsPerSecond: 60 } } });
-  return _sb;
+// Two topics per room: host→guest (hg) and guest→host (gh)
+function _topics(code) {
+  return { hg: 'rimanave-' + code + '-hg', gh: 'rimanave-' + code + '-gh' };
 }
 
 function goOnlineLobby() {
@@ -1544,37 +1542,57 @@ function goOnlineLobby() {
 function initNetPeer() {
   netCleanup();
   document.getElementById('hostCode').innerHTML = '<span style="color:rgba(255,255,255,.2);font-size:.5em;letter-spacing:.1em">generating…</span>';
-  document.getElementById('hostStatus').textContent = 'Connecting…';
+  document.getElementById('hostStatus').textContent = 'Ready';
   document.getElementById('hostStatus').className = 'lobby-status wait';
   document.getElementById('copyCodeBtn').disabled = true;
   document.getElementById('joinStatus').textContent = '';
   document.getElementById('joinInput').value = '';
   document.getElementById('joinBtn').disabled = false;
 
-  var chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  var chars = 'abcdefghjkmnpqrstuvwxyz23456789';
   var code = '';
-  for (var i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
+  for (var i = 0; i < 8; i++) code += chars[Math.floor(Math.random() * chars.length)];
   NET._myCode = code;
   NET._roomCode = code;
   NET.role = 'host';
 
-  var ch = _sbClient().channel('room:' + code, { config: { broadcast: { self: false } } });
+  // Host subscribes to gh topic (guest→host messages)
+  var t = _topics(code);
+  _openRecvWS(t.gh);
 
-  ch.on('broadcast', { event: 'game' }, function(payload) {
-    handleNetData(payload.payload);
-  });
+  document.getElementById('hostCode').textContent = code.toUpperCase();
+  document.getElementById('copyCodeBtn').disabled = false;
+  document.getElementById('hostStatus').textContent = 'Waiting for opponent to join…';
+  document.getElementById('hostStatus').className = 'lobby-status wait';
+}
 
-  ch.subscribe(function(status) {
-    if (status === 'SUBSCRIBED') {
-      NET.channel = ch;
-      document.getElementById('hostCode').textContent = code;
-      document.getElementById('copyCodeBtn').disabled = false;
-      document.getElementById('hostStatus').textContent = 'Waiting for opponent to join…';
-      document.getElementById('hostStatus').className = 'lobby-status wait';
-    } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-      showLobbyErr('Could not connect to relay server. Check your internet.');
+function _openRecvWS(topic) {
+  var ws = new WebSocket(_NTFY_WSS + '/' + topic + '/ws');
+  NET.wsRecv = ws;
+
+  ws.onopen = function() {
+    // Connection established — clear any prior error
+  };
+  ws.onmessage = function(e) {
+    try {
+      var env = JSON.parse(e.data);
+      if (env.event !== 'message') return; // skip keepalive/open events
+      var data = JSON.parse(atob(env.message));
+      handleNetData(data);
+    } catch(ex) { console.warn('ntfy parse err', ex); }
+  };
+  ws.onerror = function(err) {
+    console.warn('ntfy ws error', err);
+    showLobbyErr('WebSocket error. Check your internet and reload.');
+  };
+  ws.onclose = function() {
+    if (G && G._online) {
+      G.run = false; G = null;
+      alert('Connection lost.');
+      netCleanup();
+      fadeIn(document.getElementById('ss'));
     }
-  });
+  };
 }
 
 function showLobbyErr(msg) {
@@ -1585,18 +1603,33 @@ function showLobbyErr(msg) {
 }
 
 function netCleanup() {
-  if (NET.channel) { try { _sbClient().removeChannel(NET.channel); } catch(e){} NET.channel = null; }
+  if (NET.wsRecv) { try { NET.wsRecv.close(); } catch(e){} NET.wsRecv = null; }
   NET.role = null; NET.connected = false; NET._myCode = null; NET._roomCode = null;
+  _netLastSend = 0;
 }
 
 function netSend(data) {
-  if (!NET.channel) return;
-  NET.channel.send({ type: 'broadcast', event: 'game', payload: data });
+  var code = NET._roomCode;
+  if (!code) return;
+  var t = _topics(code);
+  var topic = NET.role === 'host' ? t.hg : t.gh;
+
+  // Rate-limit high-frequency game_state/guest_paddle to ~20/s max
+  var now = Date.now();
+  if ((data.type === 'game_state' || data.type === 'guest_paddle') && now - _netLastSend < 50) return;
+  _netLastSend = now;
+
+  var msg = btoa(JSON.stringify(data));
+  fetch(_NTFY + '/' + topic, {
+    method: 'POST',
+    body: msg,
+    headers: { 'Content-Type': 'text/plain', 'Priority': '5' }
+  }).catch(function(){});
 }
 
 // COPY CODE button
 document.getElementById('copyCodeBtn').addEventListener('click', function() {
-  var code = NET._myCode || '';
+  var code = (NET._myCode || '').toUpperCase();
   if (navigator.clipboard) { navigator.clipboard.writeText(code).catch(function(){}); }
   else { var ta=document.createElement('textarea');ta.value=code;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta); }
   var btn = document.getElementById('copyCodeBtn');
@@ -1606,38 +1639,29 @@ document.getElementById('copyCodeBtn').addEventListener('click', function() {
 
 // JOIN button
 document.getElementById('joinBtn').addEventListener('click', function() {
-  var raw = document.getElementById('joinInput').value.trim().toUpperCase().replace(/[-\s]/g,'');
+  var raw = document.getElementById('joinInput').value.trim().toLowerCase().replace(/[-\s]/g,'');
   if (!raw || raw.length < 4) {
     document.getElementById('joinStatus').textContent = 'Enter a room code.';
     document.getElementById('joinStatus').className = 'lobby-status err'; return;
   }
-  document.getElementById('joinStatus').textContent = 'Joining room…';
+  document.getElementById('joinStatus').textContent = 'Joining…';
   document.getElementById('joinStatus').className = 'lobby-status wait';
   document.getElementById('joinBtn').disabled = true;
 
-  // Guest subscribes to same room channel
   netCleanup();
   NET.role = 'guest';
   NET._roomCode = raw;
+  NET._myCode = raw;
 
-  var ch = _sbClient().channel('room:' + raw, { config: { broadcast: { self: false } } });
+  // Guest subscribes to hg topic (host→guest messages)
+  var t2 = _topics(raw);
+  _openRecvWS(t2.hg);
 
-  ch.on('broadcast', { event: 'game' }, function(payload) {
-    handleNetData(payload.payload);
-  });
-
-  ch.subscribe(function(status) {
-    if (status === 'SUBSCRIBED') {
-      NET.channel = ch;
-      // Announce presence to host
-      netSend({ type: 'guest_join' });
-      document.getElementById('joinStatus').textContent = 'Joined room — waiting for host…';
-      document.getElementById('joinStatus').className = 'lobby-status wait';
-    } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-      showLobbyErr('Could not connect. Check your internet and the room code.');
-      document.getElementById('joinBtn').disabled = false;
-    }
-  });
+  // Announce to host after WS is open (small delay for connection)
+  setTimeout(function() {
+    netSend({ type: 'guest_join' });
+    document.getElementById('joinStatus').textContent = 'Joined — waiting for host to respond…';
+  }, 800);
 });
 
 // LOBBY BACK button
