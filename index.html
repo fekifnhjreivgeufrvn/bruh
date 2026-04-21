@@ -1545,78 +1545,103 @@ function initNetPeer() {
   for (var i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
   NET._myCode = code;
 
-  try {
-    NET.peer = new Peer(code, {
-      debug: 0,
-      config: {
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-          // Open Relay TURN servers (relay traffic when direct connection fails)
-          {
-            urls: 'turn:openrelay.metered.ca:80',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-          },
-          {
-            urls: 'turn:openrelay.metered.ca:443',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-          },
-          {
-            urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-          }
-        ],
-        iceTransportPolicy: 'all'
-      }
-    });
-  } catch(e) {
-    showLobbyErr('PeerJS failed to initialise. Reload and try again.');
-    return;
+  // ICE config: STUN + multiple TURN providers (TLS/TCP on 443 bypasses most firewalls)
+  // relayOnly=true forces all traffic through TURN relay (used as fallback)
+  function makeIceConfig(relayOnly) {
+    return {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        // Metered open relay — UDP 80
+        { urls: 'turn:openrelay.metered.ca:80',      username: 'openrelayproject', credential: 'openrelayproject' },
+        // Metered open relay — TLS 443 (looks like HTTPS, passes most firewalls)
+        { urls: 'turns:openrelay.metered.ca:443',    username: 'openrelayproject', credential: 'openrelayproject' },
+        // Metered open relay — TCP 443
+        { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+        // freeturn.net — independent provider, different infrastructure
+        { urls: 'turn:freeturn.net:3478',  username: 'free', credential: 'free' },
+        { urls: 'turns:freeturn.net:5349', username: 'free', credential: 'free' }
+      ],
+      iceTransportPolicy: relayOnly ? 'relay' : 'all'
+    };
   }
 
-  NET.peer.on('open', function(id) {
-    NET._myCode = id; // use actual assigned id (may differ if collision)
+  function buildPeer(code, relayOnly, cb) {
+    var p;
+    try {
+      p = new Peer(code, { debug: 0, config: makeIceConfig(relayOnly) });
+    } catch(e) { cb(null); return; }
+    var done = false;
+    var t = setTimeout(function() {
+      if (!done) { done = true; try { p.destroy(); } catch(e){} cb(null); }
+    }, 7000);
+    p.on('open', function(id) {
+      if (done) return;
+      done = true; clearTimeout(t); cb(p, id);
+    });
+    p.on('error', function(err) {
+      if (done) return;
+      if (err.type === 'unavailable-id') {
+        // code collision — regenerate
+        done = true; clearTimeout(t); try { p.destroy(); } catch(e){}
+        setTimeout(initNetPeer, 300); return;
+      }
+      // surface errors that fire after open
+      if (NET.peer === p) {
+        var msgs = { 'peer-unavailable':'Room not found. Check the code.', 'network':'Network error.', 'browser-incompatible':'Browser doesn\'t support WebRTC.' };
+        showLobbyErr(msgs[err.type] || 'Error: ' + err.type);
+        document.getElementById('joinBtn').disabled = false;
+      }
+    });
+  }
+
+  var statusEl = document.getElementById('hostStatus');
+  statusEl.textContent = 'Connecting to network…';
+  statusEl.className = 'lobby-status wait';
+
+  // First try normal (all ICE candidates). If peer doesn't open in 7s, retry relay-only.
+  buildPeer(code, false, function(p, id) {
+    if (!p) {
+      statusEl.textContent = 'Retrying with relay mode…';
+      buildPeer(code, true, function(p2, id2) {
+        if (!p2) { showLobbyErr('Cannot reach network. Check connection and reload.'); return; }
+        finishPeerSetup(p2, id2);
+      });
+      return;
+    }
+    finishPeerSetup(p, id);
+  });
+
+  function finishPeerSetup(p, id) {
+    NET.peer = p;
+    NET._myCode = id;
     var display = id.length > 8 ? id.slice(0,4)+'-'+id.slice(4,8) : id;
     document.getElementById('hostCode').textContent = display;
     document.getElementById('copyCodeBtn').disabled = false;
-  });
+    statusEl.textContent = 'Waiting for opponent to join…';
+    statusEl.className = 'lobby-status wait';
 
-  NET.peer.on('error', function(err) {
-    var msgs = {
-      'peer-unavailable': 'Room not found. Check the code.',
-      'network': 'Network error — check your connection.',
-      'browser-incompatible': 'Your browser doesn\'t support WebRTC.',
-      'unavailable-id': 'Code taken, retrying…'
-    };
-    var msg = msgs[err.type] || 'Error: ' + err.type;
-    showLobbyErr(msg);
-    document.getElementById('joinBtn').disabled = false;
-    if (err.type === 'unavailable-id') setTimeout(initNetPeer, 600);
-  });
-
-  // HOST: incoming connection
-  NET.peer.on('connection', function(conn) {
-    if (NET.connected) { conn.close(); return; }
-    NET.role = 'host';
-    NET.conn = conn;
-    document.getElementById('hostStatus').textContent = 'Opponent connecting… please wait';
-    document.getElementById('hostStatus').className = 'lobby-status wait';
-    setupConn(conn, function() {
-      NET.connected = true;
-      document.getElementById('hostStatus').textContent = '✓ Opponent connected! Starting draft…';
-      document.getElementById('hostStatus').className = 'lobby-status ok';
-      setTimeout(function() {
-        GCFG.cpu = 'off';
-        fadeOut(document.getElementById('lobbyScr'), function() {
-          document.getElementById('p2name').textContent = 'ONLINE P2';
-          goDraftOnline();
-        });
-      }, 1200);
+    // HOST: incoming connection
+    p.on('connection', function(conn) {
+      if (NET.connected) { conn.close(); return; }
+      NET.role = 'host';
+      NET.conn = conn;
+      statusEl.textContent = 'Opponent connecting… please wait';
+      statusEl.className = 'lobby-status wait';
+      setupConn(conn, function() {
+        NET.connected = true;
+        statusEl.textContent = '✓ Opponent connected! Starting draft…';
+        statusEl.className = 'lobby-status ok';
+        setTimeout(function() {
+          GCFG.cpu = 'off';
+          fadeOut(document.getElementById('lobbyScr'), function() {
+            document.getElementById('p2name').textContent = 'ONLINE P2';
+            goDraftOnline();
+          });
+        }, 1200);
+      });
     });
-  });
+  }
 }
 
 function showLobbyErr(msg) {
@@ -1681,7 +1706,7 @@ document.getElementById('joinBtn').addEventListener('click', function() {
   var raw = document.getElementById('joinInput').value.trim().toUpperCase().replace(/[-\s]/g,'');
   if (!raw || raw.length < 4) { document.getElementById('joinStatus').textContent='Enter a room code.'; document.getElementById('joinStatus').className='lobby-status err'; return; }
   if (!NET.peer || !NET.peer.id) { document.getElementById('joinStatus').textContent='Still connecting to network… wait a moment.'; document.getElementById('joinStatus').className='lobby-status err'; return; }
-  document.getElementById('joinStatus').textContent = 'Connecting… (may take 10–15s on first try)';
+  document.getElementById('joinStatus').textContent = 'Connecting… (up to 30s on restricted networks)';
   document.getElementById('joinStatus').className = 'lobby-status wait';
   document.getElementById('joinBtn').disabled = true;
   NET.role = 'guest';
@@ -1690,19 +1715,17 @@ document.getElementById('joinBtn').addEventListener('click', function() {
   setupConn(conn, function() {
     document.getElementById('joinStatus').textContent = '✓ Connected! Waiting for host to start draft…';
     document.getElementById('joinStatus').className = 'lobby-status ok';
-    // Tell host we're ready so they can proceed if they were waiting
     netSend({ type: 'guest_ping' });
   });
   var giveUpTimer = setTimeout(function() {
     if (!NET.connected) {
-      document.getElementById('joinStatus').textContent = 'Could not connect. Make sure the host has the lobby open, then retry.';
+      document.getElementById('joinStatus').textContent = 'Could not connect — both players may be behind strict firewalls. Try a different network (e.g. phone hotspot).';
       document.getElementById('joinStatus').className = 'lobby-status err';
       document.getElementById('joinBtn').disabled = false;
       NET.role = null;
       if (NET.conn) { try { NET.conn.close(); } catch(e){} NET.conn = null; }
     }
-  }, 20000);
-  // Cancel give-up if connected
+  }, 30000);
   var checkConn = setInterval(function() {
     if (NET.connected) { clearTimeout(giveUpTimer); clearInterval(checkConn); }
   }, 500);
