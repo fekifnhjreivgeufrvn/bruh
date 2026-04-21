@@ -6,7 +6,7 @@ document.getElementById('pauseBtn').classList.remove('show');
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no">
 <title>RIMANAVE</title>
-<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap');
 *,*::before,*::after{margin:0;padding:0;box-sizing:border-box;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
@@ -352,7 +352,7 @@ canvas{display:block;position:fixed;top:0;left:0;width:100%;height:100%}
 <div class="scr gone" id="lobbyScr">
   <div class="lobby-inner">
     <div class="lobby-title">ONLINE MULTIPLAYER</div>
-    <div class="lobby-sub">Uses PeerJS — works directly between browsers<br>No account or server needed</div>
+    <div class="lobby-sub">Relay via Supabase — works on any network<br>No WebRTC, no firewall issues</div>
     <div class="lobby-opts">
       <!-- HOST -->
       <div class="lobby-section" id="hostSection">
@@ -1463,6 +1463,7 @@ document.getElementById('quitBtn').addEventListener('click',function(){
   document.getElementById('hud').style.display='none';
   paused=false;
   if(G){G.paused=false;}
+  if(G && G._online) { netSend({ type: 'opponent_quit' }); netCleanup(); }
   G=null;
   fadeIn(document.getElementById('ss'));
 });
@@ -1517,9 +1518,21 @@ var lb1=document.getElementById('lb1');lb1.addEventListener('click',function(){N
 var lb2=document.getElementById('lb2');lb2.addEventListener('click',function(){NET.connected?lockInOnline(1):lockIn(1);});lb2.addEventListener('touchend',function(e){e.preventDefault();NET.connected?lockInOnline(1):lockIn(1);});
 
 // ═══════════════════════════════════════════════════════
-// PEERJS ONLINE MULTIPLAYER
+// SUPABASE REALTIME MULTIPLAYER
+// Pure WebSocket over wss:// port 443 — no WebRTC, no NAT issues
 // ═══════════════════════════════════════════════════════
-var NET = { peer: null, conn: null, role: null, connected: false, _myCode: null };
+
+// Public anon key for rimanave game — read-only Realtime Broadcast only
+var _SB_URL  = 'https://wlzqdogepeigzpqwxhkj.supabase.co';
+var _SB_KEY  = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndsenFkb2dlcGVpZ3pwcXd4aGtqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDUyMjcyMDAsImV4cCI6MjA2MDgwMzIwMH0.hfBFHYEbiwWxREyKmHVs4_XeGOjRQFQXMaBm8mSY1Yk';
+
+var _sb = null;
+var NET = { channel: null, role: null, connected: false, _myCode: null, _roomCode: null };
+
+function _sbClient() {
+  if (!_sb) _sb = supabase.createClient(_SB_URL, _SB_KEY, { realtime: { params: { eventsPerSecond: 60 } } });
+  return _sb;
+}
 
 function goOnlineLobby() {
   fadeOut(document.getElementById('ss'), function() {
@@ -1529,119 +1542,39 @@ function goOnlineLobby() {
 }
 
 function initNetPeer() {
-  if (NET.peer) { try { NET.peer.destroy(); } catch(e){} }
-  NET.peer = null; NET.conn = null; NET.role = null; NET.connected = false;
+  netCleanup();
   document.getElementById('hostCode').innerHTML = '<span style="color:rgba(255,255,255,.2);font-size:.5em;letter-spacing:.1em">generating…</span>';
-  document.getElementById('hostStatus').textContent = 'Waiting for opponent to join…';
+  document.getElementById('hostStatus').textContent = 'Connecting…';
   document.getElementById('hostStatus').className = 'lobby-status wait';
   document.getElementById('copyCodeBtn').disabled = true;
   document.getElementById('joinStatus').textContent = '';
   document.getElementById('joinInput').value = '';
   document.getElementById('joinBtn').disabled = false;
 
-  // Short random 6-char code = the Peer ID itself (easy to share)
   var chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   var code = '';
   for (var i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
   NET._myCode = code;
+  NET._roomCode = code;
+  NET.role = 'host';
 
-  // ICE config: STUN + multiple TURN providers (TLS/TCP on 443 bypasses most firewalls)
-  // relayOnly=true forces all traffic through TURN relay (used as fallback)
-  function makeIceConfig(relayOnly) {
-    return {
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        // Metered open relay — UDP 80
-        { urls: 'turn:openrelay.metered.ca:80',      username: 'openrelayproject', credential: 'openrelayproject' },
-        // Metered open relay — TLS 443 (looks like HTTPS, passes most firewalls)
-        { urls: 'turns:openrelay.metered.ca:443',    username: 'openrelayproject', credential: 'openrelayproject' },
-        // Metered open relay — TCP 443
-        { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
-        // freeturn.net — independent provider, different infrastructure
-        { urls: 'turn:freeturn.net:3478',  username: 'free', credential: 'free' },
-        { urls: 'turns:freeturn.net:5349', username: 'free', credential: 'free' }
-      ],
-      iceTransportPolicy: relayOnly ? 'relay' : 'all'
-    };
-  }
+  var ch = _sbClient().channel('room:' + code, { config: { broadcast: { self: false } } });
 
-  function buildPeer(code, relayOnly, cb) {
-    var p;
-    try {
-      p = new Peer(code, { debug: 0, config: makeIceConfig(relayOnly) });
-    } catch(e) { cb(null); return; }
-    var done = false;
-    var t = setTimeout(function() {
-      if (!done) { done = true; try { p.destroy(); } catch(e){} cb(null); }
-    }, 7000);
-    p.on('open', function(id) {
-      if (done) return;
-      done = true; clearTimeout(t); cb(p, id);
-    });
-    p.on('error', function(err) {
-      if (done) return;
-      if (err.type === 'unavailable-id') {
-        // code collision — regenerate
-        done = true; clearTimeout(t); try { p.destroy(); } catch(e){}
-        setTimeout(initNetPeer, 300); return;
-      }
-      // surface errors that fire after open
-      if (NET.peer === p) {
-        var msgs = { 'peer-unavailable':'Room not found. Check the code.', 'network':'Network error.', 'browser-incompatible':'Browser doesn\'t support WebRTC.' };
-        showLobbyErr(msgs[err.type] || 'Error: ' + err.type);
-        document.getElementById('joinBtn').disabled = false;
-      }
-    });
-  }
-
-  var statusEl = document.getElementById('hostStatus');
-  statusEl.textContent = 'Connecting to network…';
-  statusEl.className = 'lobby-status wait';
-
-  // First try normal (all ICE candidates). If peer doesn't open in 7s, retry relay-only.
-  buildPeer(code, false, function(p, id) {
-    if (!p) {
-      statusEl.textContent = 'Retrying with relay mode…';
-      buildPeer(code, true, function(p2, id2) {
-        if (!p2) { showLobbyErr('Cannot reach network. Check connection and reload.'); return; }
-        finishPeerSetup(p2, id2);
-      });
-      return;
-    }
-    finishPeerSetup(p, id);
+  ch.on('broadcast', { event: 'game' }, function(payload) {
+    handleNetData(payload.payload);
   });
 
-  function finishPeerSetup(p, id) {
-    NET.peer = p;
-    NET._myCode = id;
-    var display = id.length > 8 ? id.slice(0,4)+'-'+id.slice(4,8) : id;
-    document.getElementById('hostCode').textContent = display;
-    document.getElementById('copyCodeBtn').disabled = false;
-    statusEl.textContent = 'Waiting for opponent to join…';
-    statusEl.className = 'lobby-status wait';
-
-    // HOST: incoming connection
-    p.on('connection', function(conn) {
-      if (NET.connected) { conn.close(); return; }
-      NET.role = 'host';
-      NET.conn = conn;
-      statusEl.textContent = 'Opponent connecting… please wait';
-      statusEl.className = 'lobby-status wait';
-      setupConn(conn, function() {
-        NET.connected = true;
-        statusEl.textContent = '✓ Opponent connected! Starting draft…';
-        statusEl.className = 'lobby-status ok';
-        setTimeout(function() {
-          GCFG.cpu = 'off';
-          fadeOut(document.getElementById('lobbyScr'), function() {
-            document.getElementById('p2name').textContent = 'ONLINE P2';
-            goDraftOnline();
-          });
-        }, 1200);
-      });
-    });
-  }
+  ch.subscribe(function(status) {
+    if (status === 'SUBSCRIBED') {
+      NET.channel = ch;
+      document.getElementById('hostCode').textContent = code;
+      document.getElementById('copyCodeBtn').disabled = false;
+      document.getElementById('hostStatus').textContent = 'Waiting for opponent to join…';
+      document.getElementById('hostStatus').className = 'lobby-status wait';
+    } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+      showLobbyErr('Could not connect to relay server. Check your internet.');
+    }
+  });
 }
 
 function showLobbyErr(msg) {
@@ -1651,44 +1584,14 @@ function showLobbyErr(msg) {
   document.getElementById('joinStatus').className = 'lobby-status err';
 }
 
-function setupConn(conn, onOpen) {
-  var opened = false;
-  conn.on('open', function() {
-    if (opened) return; // prevent double-fire
-    opened = true;
-    NET.connected = true;
-    if (onOpen) onOpen();
-  });
-  // Safari/WebKit sometimes doesn't fire 'open' reliably —
-  // poll the connection state as a fallback
-  var pollInterval = setInterval(function() {
-    if (conn.open && !opened) {
-      opened = true;
-      NET.connected = true;
-      clearInterval(pollInterval);
-      if (onOpen) onOpen();
-    }
-    if (opened || !NET.conn) clearInterval(pollInterval);
-  }, 300);
-  conn.on('data', function(data) { handleNetData(data); });
-  conn.on('close', function() {
-    clearInterval(pollInterval);
-    NET.connected = false;
-    if (G && G._online) {
-      G.run = false; G = null;
-      alert('Opponent disconnected.');
-      fadeIn(document.getElementById('ss'));
-    }
-  });
-  conn.on('error', function(e) {
-    clearInterval(pollInterval);
-    console.warn('conn error', e);
-    showLobbyErr('Connection error: ' + (e.type || e.message || e));
-  });
+function netCleanup() {
+  if (NET.channel) { try { _sbClient().removeChannel(NET.channel); } catch(e){} NET.channel = null; }
+  NET.role = null; NET.connected = false; NET._myCode = null; NET._roomCode = null;
 }
 
 function netSend(data) {
-  if (NET.conn && NET.conn.open) try { NET.conn.send(data); } catch(e) {}
+  if (!NET.channel) return;
+  NET.channel.send({ type: 'broadcast', event: 'game', payload: data });
 }
 
 // COPY CODE button
@@ -1704,37 +1607,42 @@ document.getElementById('copyCodeBtn').addEventListener('click', function() {
 // JOIN button
 document.getElementById('joinBtn').addEventListener('click', function() {
   var raw = document.getElementById('joinInput').value.trim().toUpperCase().replace(/[-\s]/g,'');
-  if (!raw || raw.length < 4) { document.getElementById('joinStatus').textContent='Enter a room code.'; document.getElementById('joinStatus').className='lobby-status err'; return; }
-  if (!NET.peer || !NET.peer.id) { document.getElementById('joinStatus').textContent='Still connecting to network… wait a moment.'; document.getElementById('joinStatus').className='lobby-status err'; return; }
-  document.getElementById('joinStatus').textContent = 'Connecting… (up to 30s on restricted networks)';
+  if (!raw || raw.length < 4) {
+    document.getElementById('joinStatus').textContent = 'Enter a room code.';
+    document.getElementById('joinStatus').className = 'lobby-status err'; return;
+  }
+  document.getElementById('joinStatus').textContent = 'Joining room…';
   document.getElementById('joinStatus').className = 'lobby-status wait';
   document.getElementById('joinBtn').disabled = true;
+
+  // Guest subscribes to same room channel
+  netCleanup();
   NET.role = 'guest';
-  var conn = NET.peer.connect(raw, { reliable: true, serialization: 'json' });
-  NET.conn = conn;
-  setupConn(conn, function() {
-    document.getElementById('joinStatus').textContent = '✓ Connected! Waiting for host to start draft…';
-    document.getElementById('joinStatus').className = 'lobby-status ok';
-    netSend({ type: 'guest_ping' });
+  NET._roomCode = raw;
+
+  var ch = _sbClient().channel('room:' + raw, { config: { broadcast: { self: false } } });
+
+  ch.on('broadcast', { event: 'game' }, function(payload) {
+    handleNetData(payload.payload);
   });
-  var giveUpTimer = setTimeout(function() {
-    if (!NET.connected) {
-      document.getElementById('joinStatus').textContent = 'Could not connect — both players may be behind strict firewalls. Try a different network (e.g. phone hotspot).';
-      document.getElementById('joinStatus').className = 'lobby-status err';
+
+  ch.subscribe(function(status) {
+    if (status === 'SUBSCRIBED') {
+      NET.channel = ch;
+      // Announce presence to host
+      netSend({ type: 'guest_join' });
+      document.getElementById('joinStatus').textContent = 'Joined room — waiting for host…';
+      document.getElementById('joinStatus').className = 'lobby-status wait';
+    } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+      showLobbyErr('Could not connect. Check your internet and the room code.');
       document.getElementById('joinBtn').disabled = false;
-      NET.role = null;
-      if (NET.conn) { try { NET.conn.close(); } catch(e){} NET.conn = null; }
     }
-  }, 30000);
-  var checkConn = setInterval(function() {
-    if (NET.connected) { clearTimeout(giveUpTimer); clearInterval(checkConn); }
-  }, 500);
+  });
 });
 
 // LOBBY BACK button
 document.getElementById('lobbyBack').addEventListener('click', function() {
-  if (NET.peer) { try { NET.peer.destroy(); } catch(e){} NET.peer = null; }
-  NET.conn = null; NET.connected = false; NET.role = null;
+  netCleanup();
   fadeOut(document.getElementById('lobbyScr'), function() { fadeIn(document.getElementById('ss')); });
 });
 
@@ -1783,23 +1691,31 @@ var _hostAbils = null;
 function handleNetData(data) {
   if (!data || !data.type) return;
   switch(data.type) {
-    case 'guest_ping':
-      // Guest confirmed connected — host can safely proceed if stuck
-      if (NET.role === 'host' && NET.connected) {
-        netSend({ type: 'host_ack' }); // acknowledge back
-      }
+    case 'guest_join':
+      // Guest has subscribed to our room — we're the host, start draft
+      if (NET.role !== 'host' || NET.connected) break;
+      NET.connected = true;
+      document.getElementById('hostStatus').textContent = '✓ Opponent connected! Starting draft…';
+      document.getElementById('hostStatus').className = 'lobby-status ok';
+      // Ack back so guest knows host is alive
+      netSend({ type: 'host_ack' });
+      setTimeout(function() {
+        GCFG.cpu = 'off';
+        fadeOut(document.getElementById('lobbyScr'), function() {
+          document.getElementById('p2name').textContent = 'ONLINE P2';
+          goDraftOnline();
+        });
+      }, 1200);
       break;
     case 'host_ack':
-      // Host acknowledged our ping — we're definitely connected
-      if (NET.role === 'guest') {
-        document.getElementById('joinStatus').textContent = '✓ Connected! Waiting for host to start draft…';
-        document.getElementById('joinStatus').className = 'lobby-status ok';
-      }
+      if (NET.role !== 'guest') break;
+      NET.connected = true;
+      document.getElementById('joinStatus').textContent = '✓ Connected! Waiting for host to start draft…';
+      document.getElementById('joinStatus').className = 'lobby-status ok';
       break;
     case 'host_ready':
       _hostAbils = data.abils;
       if (_netLockedAbils && NET.role === 'guest') {
-        // Guest already ready, re-send
         netSend({ type: 'guest_ready', abils: _netLockedAbils });
       }
       break;
@@ -1824,6 +1740,14 @@ function handleNetData(data) {
     case 'score_event':
       if (NET.role !== 'guest' || !G) break;
       spawnP(data.bx * W, data.by * H, data.col, 26);
+      break;
+    case 'opponent_quit':
+      if (G && G._online) {
+        G.run = false; G = null;
+        alert('Opponent disconnected.');
+        netCleanup();
+        fadeIn(document.getElementById('ss'));
+      }
       break;
   }
 }
