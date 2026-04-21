@@ -1513,8 +1513,8 @@ function openCollection(backFn){
     if(backFn)backFn();
   };
 }
-var lb1=document.getElementById('lb1');lb1.addEventListener('click',function(){lockIn(0);});lb1.addEventListener('touchend',function(e){e.preventDefault();lockIn(0);});
-var lb2=document.getElementById('lb2');lb2.addEventListener('click',function(){lockIn(1);});lb2.addEventListener('touchend',function(e){e.preventDefault();lockIn(1);});
+var lb1=document.getElementById('lb1');lb1.addEventListener('click',function(){NET.connected?lockInOnline(0):lockIn(0);});lb1.addEventListener('touchend',function(e){e.preventDefault();NET.connected?lockInOnline(0):lockIn(0);});
+var lb2=document.getElementById('lb2');lb2.addEventListener('click',function(){NET.connected?lockInOnline(1):lockIn(1);});lb2.addEventListener('touchend',function(e){e.preventDefault();NET.connected?lockInOnline(1):lockIn(1);});
 
 // ═══════════════════════════════════════════════════════
 // PEERJS ONLINE MULTIPLAYER
@@ -1546,7 +1546,17 @@ function initNetPeer() {
   NET._myCode = code;
 
   try {
-    NET.peer = new Peer(code, { debug: 0 });
+    NET.peer = new Peer(code, {
+      debug: 0,
+      config: {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' },
+          { urls: 'stun:stun.stunprotocol.org:3478' }
+        ]
+      }
+    });
   } catch(e) {
     showLobbyErr('PeerJS failed to initialise. Reload and try again.');
     return;
@@ -1577,17 +1587,19 @@ function initNetPeer() {
     if (NET.connected) { conn.close(); return; }
     NET.role = 'host';
     NET.conn = conn;
-    document.getElementById('hostStatus').textContent = 'Opponent connected! Starting…';
-    document.getElementById('hostStatus').className = 'lobby-status ok';
+    document.getElementById('hostStatus').textContent = 'Opponent connecting… please wait';
+    document.getElementById('hostStatus').className = 'lobby-status wait';
     setupConn(conn, function() {
       NET.connected = true;
+      document.getElementById('hostStatus').textContent = '✓ Opponent connected! Starting draft…';
+      document.getElementById('hostStatus').className = 'lobby-status ok';
       setTimeout(function() {
         GCFG.cpu = 'off';
         fadeOut(document.getElementById('lobbyScr'), function() {
           document.getElementById('p2name').textContent = 'ONLINE P2';
           goDraftOnline();
         });
-      }, 700);
+      }, 1200);
     });
   });
 }
@@ -1600,13 +1612,39 @@ function showLobbyErr(msg) {
 }
 
 function setupConn(conn, onOpen) {
-  conn.on('open', function() { NET.connected = true; if (onOpen) onOpen(); });
+  var opened = false;
+  conn.on('open', function() {
+    if (opened) return; // prevent double-fire
+    opened = true;
+    NET.connected = true;
+    if (onOpen) onOpen();
+  });
+  // Safari/WebKit sometimes doesn't fire 'open' reliably —
+  // poll the connection state as a fallback
+  var pollInterval = setInterval(function() {
+    if (conn.open && !opened) {
+      opened = true;
+      NET.connected = true;
+      clearInterval(pollInterval);
+      if (onOpen) onOpen();
+    }
+    if (opened || !NET.conn) clearInterval(pollInterval);
+  }, 300);
   conn.on('data', function(data) { handleNetData(data); });
   conn.on('close', function() {
+    clearInterval(pollInterval);
     NET.connected = false;
-    if (G && G._online) { G.run = false; G = null; alert('Opponent disconnected.'); fadeIn(document.getElementById('ss')); }
+    if (G && G._online) {
+      G.run = false; G = null;
+      alert('Opponent disconnected.');
+      fadeIn(document.getElementById('ss'));
+    }
   });
-  conn.on('error', function(e) { console.warn('conn error', e); });
+  conn.on('error', function(e) {
+    clearInterval(pollInterval);
+    console.warn('conn error', e);
+    showLobbyErr('Connection error: ' + (e.type || e.message || e));
+  });
 }
 
 function netSend(data) {
@@ -1627,26 +1665,32 @@ document.getElementById('copyCodeBtn').addEventListener('click', function() {
 document.getElementById('joinBtn').addEventListener('click', function() {
   var raw = document.getElementById('joinInput').value.trim().toUpperCase().replace(/[-\s]/g,'');
   if (!raw || raw.length < 4) { document.getElementById('joinStatus').textContent='Enter a room code.'; document.getElementById('joinStatus').className='lobby-status err'; return; }
-  if (!NET.peer || !NET.peer.id) { document.getElementById('joinStatus').textContent='Still connecting… wait a moment.'; document.getElementById('joinStatus').className='lobby-status err'; return; }
-  document.getElementById('joinStatus').textContent = 'Connecting…';
+  if (!NET.peer || !NET.peer.id) { document.getElementById('joinStatus').textContent='Still connecting to network… wait a moment.'; document.getElementById('joinStatus').className='lobby-status err'; return; }
+  document.getElementById('joinStatus').textContent = 'Connecting… (may take 10–15s on first try)';
   document.getElementById('joinStatus').className = 'lobby-status wait';
   document.getElementById('joinBtn').disabled = true;
   NET.role = 'guest';
   var conn = NET.peer.connect(raw, { reliable: true, serialization: 'json' });
   NET.conn = conn;
   setupConn(conn, function() {
-    document.getElementById('joinStatus').textContent = '✓ Connected! Waiting for host…';
+    document.getElementById('joinStatus').textContent = '✓ Connected! Waiting for host to start draft…';
     document.getElementById('joinStatus').className = 'lobby-status ok';
-    NET.connected = true;
+    // Tell host we're ready so they can proceed if they were waiting
+    netSend({ type: 'guest_ping' });
   });
-  setTimeout(function() {
+  var giveUpTimer = setTimeout(function() {
     if (!NET.connected) {
-      document.getElementById('joinStatus').textContent = 'Could not connect. Check the code.';
+      document.getElementById('joinStatus').textContent = 'Could not connect. Make sure the host has the lobby open, then retry.';
       document.getElementById('joinStatus').className = 'lobby-status err';
       document.getElementById('joinBtn').disabled = false;
-      NET.role = null; if(NET.conn) { try { NET.conn.close(); } catch(e){} NET.conn = null; }
+      NET.role = null;
+      if (NET.conn) { try { NET.conn.close(); } catch(e){} NET.conn = null; }
     }
-  }, 9000);
+  }, 20000);
+  // Cancel give-up if connected
+  var checkConn = setInterval(function() {
+    if (NET.connected) { clearTimeout(giveUpTimer); clearInterval(checkConn); }
+  }, 500);
 });
 
 // LOBBY BACK button
@@ -1675,10 +1719,8 @@ function goDraftOnline() {
   fadeIn(document.getElementById('ds'));
 }
 
-// Override lockIn for online mode
-var _origLockIn = lockIn;
-function lockIn(pi) {
-  if (!NET.connected) { _origLockIn(pi); return; }
+// Online lockIn handler (called by goDraftOnline flow)
+function lockInOnline(pi) {
   var myPi = NET.role === 'host' ? 0 : 1;
   if (pi !== myPi) return;
   if (DS[pi].length < 3 || DL[pi]) return;
@@ -1703,6 +1745,19 @@ var _hostAbils = null;
 function handleNetData(data) {
   if (!data || !data.type) return;
   switch(data.type) {
+    case 'guest_ping':
+      // Guest confirmed connected — host can safely proceed if stuck
+      if (NET.role === 'host' && NET.connected) {
+        netSend({ type: 'host_ack' }); // acknowledge back
+      }
+      break;
+    case 'host_ack':
+      // Host acknowledged our ping — we're definitely connected
+      if (NET.role === 'guest') {
+        document.getElementById('joinStatus').textContent = '✓ Connected! Waiting for host to start draft…';
+        document.getElementById('joinStatus').className = 'lobby-status ok';
+      }
+      break;
     case 'host_ready':
       _hostAbils = data.abils;
       if (_netLockedAbils && NET.role === 'guest') {
