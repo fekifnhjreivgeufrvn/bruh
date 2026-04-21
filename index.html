@@ -351,25 +351,46 @@ canvas{display:block;position:fixed;top:0;left:0;width:100%;height:100%}
 <div class="scr gone" id="lobbyScr">
   <div class="lobby-inner">
     <div class="lobby-title">ONLINE MULTIPLAYER</div>
-    <div class="lobby-sub">Relay via ntfy.sh — works on any network<br>No WebRTC · No accounts · Pure HTTPS</div>
-    <div class="lobby-opts">
-      <!-- HOST -->
-      <div class="lobby-section" id="hostSection">
-        <div class="lobby-label">Host a game</div>
-        <div class="lobby-code" id="hostCode"><span style="color:rgba(255,255,255,.2);font-size:.5em;letter-spacing:.1em">generating…</span></div>
-        <div class="copy-hint">Share this code with your opponent</div>
-        <button class="lbtn lbtn-host" id="copyCodeBtn" disabled>COPY CODE</button>
-        <div class="lobby-status wait" id="hostStatus">Waiting for opponent to join…</div>
-      </div>
-      <!-- JOIN -->
-      <div class="lobby-section">
-        <div class="lobby-label">Join a game</div>
-        <input class="lobby-input" id="joinInput" type="text" maxlength="20" placeholder="Enter room code" autocomplete="off" spellcheck="false"/>
-        <button class="lbtn lbtn-join" id="joinBtn">JOIN</button>
-        <div class="lobby-status" id="joinStatus"></div>
+    <div class="lobby-sub">Powered by Ably · Works on any network · No WebRTC</div>
+
+    <!-- STEP 1: API key setup (shown when no key saved) -->
+    <div id="ablyCfg" class="lobby-opts">
+      <div class="lobby-section" style="gap:10px">
+        <div class="lobby-label" style="color:#00f0ff;letter-spacing:.1em">FIRST-TIME SETUP (30 seconds)</div>
+        <div style="font-family:'Share Tech Mono',monospace;font-size:clamp(7px,1.6vw,9px);color:rgba(255,255,255,.45);line-height:1.8">
+          1. Go to <span style="color:#00f0ff">ably.com</span> → Sign up free (no card)<br>
+          2. Create an App → copy the <span style="color:#00f0ff">API Key</span><br>
+          3. Paste it below — saved in your browser
+        </div>
+        <input class="lobby-input" id="ablyKeyInput" type="text" maxlength="120" placeholder="Paste Ably API key here" autocomplete="off" spellcheck="false" style="font-size:clamp(9px,2vw,12px);letter-spacing:.05em"/>
+        <button class="lbtn lbtn-host" id="ablyKeySaveBtn">SAVE &amp; CONTINUE</button>
+        <div class="lobby-status" id="ablyKeyStatus"></div>
       </div>
     </div>
-    <button class="lbtn lbtn-back" id="lobbyBack">← BACK TO MENU</button>
+
+    <!-- STEP 2: Host / Join (shown once key is set) -->
+    <div id="ablyLobby" style="display:none;width:100%">
+      <div class="lobby-opts">
+        <!-- HOST -->
+        <div class="lobby-section" id="hostSection">
+          <div class="lobby-label">Host a game</div>
+          <div class="lobby-code" id="hostCode"><span style="color:rgba(255,255,255,.2);font-size:.5em;letter-spacing:.1em">—</span></div>
+          <div class="copy-hint">Share this code with your opponent</div>
+          <button class="lbtn lbtn-host" id="copyCodeBtn" disabled>COPY CODE</button>
+          <div class="lobby-status wait" id="hostStatus"></div>
+        </div>
+        <!-- JOIN -->
+        <div class="lobby-section">
+          <div class="lobby-label">Join a game</div>
+          <input class="lobby-input" id="joinInput" type="text" maxlength="20" placeholder="Enter room code" autocomplete="off" spellcheck="false"/>
+          <button class="lbtn lbtn-join" id="joinBtn">JOIN</button>
+          <div class="lobby-status" id="joinStatus"></div>
+        </div>
+      </div>
+      <button class="lbtn lbtn-back" style="margin-top:6px;font-size:clamp(6px,1.4vw,8px);opacity:.4" id="ablyResetBtn">✕ CLEAR API KEY</button>
+    </div>
+
+    <button class="lbtn lbtn-back" id="lobbyBack" style="margin-top:8px">← BACK TO MENU</button>
   </div>
 </div>
 
@@ -378,8 +399,8 @@ canvas{display:block;position:fixed;top:0;left:0;width:100%;height:100%}
 <canvas id="gc"></canvas>
 <canvas id="pc"></canvas>
 
-<script>
-"use strict";
+<script src="https://cdn.ably.com/lib/ably.min-2.js"></script>
+
 var RW={common:50,uncommon:23,rare:12,epic:6,legendary:3,luminous:4};
 var ABILS=[
   {id:1,name:'Spin Touch',rar:'common',ico:'&#127744;',stats:['+20% curve from offset','Scales with edge distance']},
@@ -1517,82 +1538,141 @@ var lb1=document.getElementById('lb1');lb1.addEventListener('click',function(){N
 var lb2=document.getElementById('lb2');lb2.addEventListener('click',function(){NET.connected?lockInOnline(1):lockIn(1);});lb2.addEventListener('touchend',function(e){e.preventDefault();NET.connected?lockInOnline(1):lockIn(1);});
 
 // ═══════════════════════════════════════════════════════
-// NTFY.SH RELAY MULTIPLAYER
-// Pure WebSocket/HTTPS pub-sub — no WebRTC, no NAT, no accounts
-// wss://ntfy.sh — open source, free, works on any network
+// ABLY REALTIME MULTIPLAYER
+// Pure WebSocket over wss:443 — no WebRTC, no NAT issues
+// Requires free Ably account (ably.com) — key stored in localStorage
 // ═══════════════════════════════════════════════════════
 
-var NET = { wsRecv: null, role: null, connected: false, _myCode: null, _roomCode: null };
-var _NTFY = 'https://ntfy.sh';
-var _NTFY_WSS = 'wss://ntfy.sh';
-var _netLastSend = 0; // for rate limiting
+var NET = { ably: null, channel: null, role: null, connected: false, _myCode: null, _roomCode: null };
+var _netLastGameState = 0;
 
-// Two topics per room: host→guest (hg) and guest→host (gh)
-function _topics(code) {
-  return { hg: 'rimanave-' + code + '-hg', gh: 'rimanave-' + code + '-gh' };
+function _ablyKey() {
+  try { return localStorage.getItem('rimanave_ably_key') || ''; } catch(e) { return ''; }
+}
+function _ablyKeySave(k) {
+  try { localStorage.setItem('rimanave_ably_key', k); } catch(e) {}
+}
+function _ablyKeyClear() {
+  try { localStorage.removeItem('rimanave_ably_key'); } catch(e) {}
 }
 
 function goOnlineLobby() {
   fadeOut(document.getElementById('ss'), function() {
     fadeIn(document.getElementById('lobbyScr'));
-    initNetPeer();
+    _lobbyShow();
   });
 }
 
+function _lobbyShow() {
+  var key = _ablyKey();
+  if (key) {
+    document.getElementById('ablyCfg').style.display = 'none';
+    document.getElementById('ablyLobby').style.display = 'block';
+    initNetPeer();
+  } else {
+    document.getElementById('ablyCfg').style.display = 'block';
+    document.getElementById('ablyLobby').style.display = 'none';
+  }
+}
+
+// Save key button
+document.getElementById('ablyKeySaveBtn').addEventListener('click', function() {
+  var k = document.getElementById('ablyKeyInput').value.trim();
+  if (!k || k.indexOf(':') < 0) {
+    document.getElementById('ablyKeyStatus').textContent = 'Paste a valid Ably API key (format: appId.keyId:secret)';
+    document.getElementById('ablyKeyStatus').className = 'lobby-status err';
+    return;
+  }
+  document.getElementById('ablyKeyStatus').textContent = 'Testing key…';
+  document.getElementById('ablyKeyStatus').className = 'lobby-status wait';
+  // Quick test connect
+  var testClient;
+  try { testClient = new Ably.Realtime({ key: k, autoConnect: true }); } catch(e) {
+    document.getElementById('ablyKeyStatus').textContent = 'Invalid key format.';
+    document.getElementById('ablyKeyStatus').className = 'lobby-status err';
+    return;
+  }
+  var done = false;
+  var t = setTimeout(function() {
+    if (!done) { done = true; testClient.close(); document.getElementById('ablyKeyStatus').textContent = 'Could not connect — check the key and your internet.'; document.getElementById('ablyKeyStatus').className = 'lobby-status err'; }
+  }, 8000);
+  testClient.connection.on('connected', function() {
+    if (done) return; done = true; clearTimeout(t); testClient.close();
+    _ablyKeySave(k);
+    document.getElementById('ablyKeyStatus').textContent = '✓ Connected!';
+    document.getElementById('ablyKeyStatus').className = 'lobby-status ok';
+    setTimeout(function() { _lobbyShow(); }, 600);
+  });
+  testClient.connection.on('failed', function(err) {
+    if (done) return; done = true; clearTimeout(t); testClient.close();
+    document.getElementById('ablyKeyStatus').textContent = 'Auth failed — is the key correct?';
+    document.getElementById('ablyKeyStatus').className = 'lobby-status err';
+  });
+});
+
+// Reset key button
+document.getElementById('ablyResetBtn').addEventListener('click', function() {
+  _ablyKeyClear(); netCleanup();
+  document.getElementById('ablyLobby').style.display = 'none';
+  document.getElementById('ablyCfg').style.display = 'block';
+  document.getElementById('ablyKeyInput').value = '';
+  document.getElementById('ablyKeyStatus').textContent = '';
+});
+
 function initNetPeer() {
   netCleanup();
-  document.getElementById('hostCode').innerHTML = '<span style="color:rgba(255,255,255,.2);font-size:.5em;letter-spacing:.1em">generating…</span>';
-  document.getElementById('hostStatus').textContent = 'Ready';
-  document.getElementById('hostStatus').className = 'lobby-status wait';
+  var key = _ablyKey();
+  if (!key) return;
+
+  document.getElementById('hostCode').innerHTML = '<span style="color:rgba(255,255,255,.2);font-size:.5em;letter-spacing:.1em">connecting…</span>';
+  document.getElementById('hostStatus').textContent = '';
   document.getElementById('copyCodeBtn').disabled = true;
   document.getElementById('joinStatus').textContent = '';
   document.getElementById('joinInput').value = '';
   document.getElementById('joinBtn').disabled = false;
 
-  var chars = 'abcdefghjkmnpqrstuvwxyz23456789';
+  var chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   var code = '';
-  for (var i = 0; i < 8; i++) code += chars[Math.floor(Math.random() * chars.length)];
+  for (var i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
   NET._myCode = code;
   NET._roomCode = code;
   NET.role = 'host';
 
-  // Host subscribes to gh topic (guest→host messages)
-  var t = _topics(code);
-  _openRecvWS(t.gh);
+  try {
+    NET.ably = new Ably.Realtime({ key: key, autoConnect: true });
+  } catch(e) {
+    showLobbyErr('Failed to init Ably. Check your API key.');
+    return;
+  }
 
-  document.getElementById('hostCode').textContent = code.toUpperCase();
-  document.getElementById('copyCodeBtn').disabled = false;
-  document.getElementById('hostStatus').textContent = 'Waiting for opponent to join…';
-  document.getElementById('hostStatus').className = 'lobby-status wait';
-}
+  NET.ably.connection.on('connected', function() {
+    _subscribeChannel(code, 'host');
+    document.getElementById('hostCode').textContent = code;
+    document.getElementById('copyCodeBtn').disabled = false;
+    document.getElementById('hostStatus').textContent = 'Waiting for opponent to join…';
+    document.getElementById('hostStatus').className = 'lobby-status wait';
+  });
 
-function _openRecvWS(topic) {
-  var ws = new WebSocket(_NTFY_WSS + '/' + topic + '/ws');
-  NET.wsRecv = ws;
+  NET.ably.connection.on('failed', function() {
+    showLobbyErr('Ably connection failed. Check your API key.');
+  });
 
-  ws.onopen = function() {
-    // Connection established — clear any prior error
-  };
-  ws.onmessage = function(e) {
-    try {
-      var env = JSON.parse(e.data);
-      if (env.event !== 'message') return; // skip keepalive/open events
-      var data = JSON.parse(atob(env.message));
-      handleNetData(data);
-    } catch(ex) { console.warn('ntfy parse err', ex); }
-  };
-  ws.onerror = function(err) {
-    console.warn('ntfy ws error', err);
-    showLobbyErr('WebSocket error. Check your internet and reload.');
-  };
-  ws.onclose = function() {
+  NET.ably.connection.on('disconnected', function() {
     if (G && G._online) {
       G.run = false; G = null;
       alert('Connection lost.');
       netCleanup();
       fadeIn(document.getElementById('ss'));
     }
-  };
+  });
+}
+
+function _subscribeChannel(code, role) {
+  var channelName = 'rimanave-' + code + (role === 'host' ? '-gh' : '-hg');
+  NET.channel = NET.ably.channels.get(channelName);
+  NET.channel.subscribe(function(msg) {
+    try { handleNetData(JSON.parse(msg.data)); } catch(e) {}
+  });
 }
 
 function showLobbyErr(msg) {
@@ -1603,33 +1683,26 @@ function showLobbyErr(msg) {
 }
 
 function netCleanup() {
-  if (NET.wsRecv) { try { NET.wsRecv.close(); } catch(e){} NET.wsRecv = null; }
+  if (NET.channel) { try { NET.channel.unsubscribe(); } catch(e){} NET.channel = null; }
+  if (NET.ably) { try { NET.ably.close(); } catch(e){} NET.ably = null; }
   NET.role = null; NET.connected = false; NET._myCode = null; NET._roomCode = null;
-  _netLastSend = 0;
+  _netLastGameState = 0;
 }
 
 function netSend(data) {
-  var code = NET._roomCode;
-  if (!code) return;
-  var t = _topics(code);
-  var topic = NET.role === 'host' ? t.hg : t.gh;
-
-  // Rate-limit high-frequency game_state/guest_paddle to ~20/s max
+  if (!NET.ably || !NET._roomCode) return;
+  // Rate-limit high-frequency messages
   var now = Date.now();
-  if ((data.type === 'game_state' || data.type === 'guest_paddle') && now - _netLastSend < 50) return;
-  _netLastSend = now;
+  if ((data.type === 'game_state' || data.type === 'guest_paddle') && now - _netLastGameState < 50) return;
+  if (data.type === 'game_state' || data.type === 'guest_paddle') _netLastGameState = now;
 
-  var msg = btoa(JSON.stringify(data));
-  fetch(_NTFY + '/' + topic, {
-    method: 'POST',
-    body: msg,
-    headers: { 'Content-Type': 'text/plain', 'Priority': '5' }
-  }).catch(function(){});
+  var sendChannel = 'rimanave-' + NET._roomCode + (NET.role === 'host' ? '-hg' : '-gh');
+  NET.ably.channels.get(sendChannel).publish('g', JSON.stringify(data));
 }
 
 // COPY CODE button
 document.getElementById('copyCodeBtn').addEventListener('click', function() {
-  var code = (NET._myCode || '').toUpperCase();
+  var code = NET._myCode || '';
   if (navigator.clipboard) { navigator.clipboard.writeText(code).catch(function(){}); }
   else { var ta=document.createElement('textarea');ta.value=code;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta); }
   var btn = document.getElementById('copyCodeBtn');
@@ -1639,29 +1712,27 @@ document.getElementById('copyCodeBtn').addEventListener('click', function() {
 
 // JOIN button
 document.getElementById('joinBtn').addEventListener('click', function() {
-  var raw = document.getElementById('joinInput').value.trim().toLowerCase().replace(/[-\s]/g,'');
+  var raw = document.getElementById('joinInput').value.trim().toUpperCase().replace(/[-\s]/g,'');
   if (!raw || raw.length < 4) {
     document.getElementById('joinStatus').textContent = 'Enter a room code.';
+    document.getElementById('joinStatus').className = 'lobby-status err'; return;
+  }
+  if (!NET.ably) {
+    document.getElementById('joinStatus').textContent = 'Not connected yet — wait a moment.';
     document.getElementById('joinStatus').className = 'lobby-status err'; return;
   }
   document.getElementById('joinStatus').textContent = 'Joining…';
   document.getElementById('joinStatus').className = 'lobby-status wait';
   document.getElementById('joinBtn').disabled = true;
 
-  netCleanup();
   NET.role = 'guest';
   NET._roomCode = raw;
-  NET._myCode = raw;
+  _subscribeChannel(raw, 'guest');
 
-  // Guest subscribes to hg topic (host→guest messages)
-  var t2 = _topics(raw);
-  _openRecvWS(t2.hg);
-
-  // Announce to host after WS is open (small delay for connection)
   setTimeout(function() {
     netSend({ type: 'guest_join' });
-    document.getElementById('joinStatus').textContent = 'Joined — waiting for host to respond…';
-  }, 800);
+    document.getElementById('joinStatus').textContent = 'Waiting for host to respond…';
+  }, 500);
 });
 
 // LOBBY BACK button
