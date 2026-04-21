@@ -6,6 +6,7 @@ document.getElementById('pauseBtn').classList.remove('show');
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no">
 <title>RIMANAVE</title>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap');
 *,*::before,*::after{margin:0;padding:0;box-sizing:border-box;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
@@ -19,7 +20,7 @@ canvas{display:block;position:fixed;top:0;left:0;width:100%;height:100%}
 .scr.gone{display:none!important}
 
 /* ── TITLE: force row layout, wrap gracefully on tiny screens ── */
-.title-layout{display:flex;flex-direction:row;flex-wrap:nowrap;align-items:center;justify-content:flex-start;gap:24px;padding:32px 28px;width:100%;max-width:640px;box-sizing:border-box}
+.title-layout{display:flex;flex-direction:row;flex-wrap:nowrap;align-items:center;justify-content:space-between;gap:24px;padding:32px 28px;width:100%;max-width:640px;box-sizing:border-box}
 .title-left{display:flex;flex-direction:column;align-items:flex-start;flex:1 1 auto;min-width:0;max-width:320px}
 .title-right{display:flex;flex-direction:column;gap:11px;flex:0 0 180px;width:180px}
 
@@ -60,8 +61,7 @@ canvas{display:block;position:fixed;top:0;left:0;width:100%;height:100%}
 .sl{font-family:'Share Tech Mono',monospace;font-size:clamp(4.5px,1.1vw,6.5px);color:rgba(255,255,255,.38);text-align:center;line-height:1.5}
 .crar{font-family:'Share Tech Mono',monospace;font-size:clamp(4px,1vw,6px);letter-spacing:.12em;text-align:center;opacity:.7;text-transform:uppercase;margin-top:1px}
 
-.logo{font-size:clamp(36px,10vw,72px);font-weight:900;letter-spacing:.08em;background:linear-gradient(130deg,#00f0ff 0%,#c0faff 40%,#ff2d78 80%,#ff8fb0 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;animation:logoPulse 3.5s ease-in-out infinite;line-height:1;display:block}
-.logo-line{display:block}
+.logo{font-size:clamp(28px,8vw,64px);font-weight:900;letter-spacing:.1em;background:linear-gradient(130deg,#00f0ff 0%,#c0faff 40%,#ff2d78 80%,#ff8fb0 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;animation:logoPulse 3.5s ease-in-out infinite;line-height:1;display:block}
 @keyframes logoPulse{0%,100%{opacity:.92}50%{opacity:1}}
 .logo-sub{font-family:'Share Tech Mono',monospace;font-size:clamp(7px,1.8vw,11px);letter-spacing:.32em;color:rgba(255,255,255,.25);margin:3px 0 14px;text-transform:uppercase}
 .title-bars{display:flex;flex-direction:column;gap:5px;margin-bottom:12px}
@@ -87,11 +87,9 @@ canvas{display:block;position:fixed;top:0;left:0;width:100%;height:100%}
 .diff-opt.hot .diff-name{color:#ff2d78;text-shadow:0 0 8px #ff2d7888}
 .diff-desc{font-family:'Share Tech Mono',monospace;font-size:clamp(6px,1.4vw,8px);color:rgba(255,255,255,.3);letter-spacing:.05em}
 /* ── CHANGELOG ── */
-.log-inner{display:flex;flex-direction:column;align-items:stretch;padding:20px 18px 14px;background:rgba(2,2,10,.88);border:1px solid rgba(255,255,255,.07);border-radius:16px;max-width:380px;width:92%;height:82vh;gap:12px}
-.log-title{font-size:clamp(16px,4vw,20px);font-weight:900;letter-spacing:.22em;color:#fff;margin-bottom:4px;flex-shrink:0;text-align:center}
-.log-entries{display:flex;flex-direction:column;gap:14px;width:100%;flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;touch-action:pan-y;padding-right:4px;min-height:0}
-.log-entries::-webkit-scrollbar{width:3px}
-.log-entries::-webkit-scrollbar-thumb{background:rgba(255,255,255,.15);border-radius:2px}
+.log-inner{display:flex;flex-direction:column;align-items:center;padding:20px 18px;background:rgba(2,2,10,.88);border:1px solid rgba(255,255,255,.07);border-radius:16px;max-width:380px;width:92%;max-height:80vh;overflow-y:scroll;-webkit-overflow-scrolling:touch;touch-action:pan-y;gap:12px}
+.log-title{font-size:clamp(16px,4vw,20px);font-weight:900;letter-spacing:.22em;color:#fff;margin-bottom:4px}
+.log-entries{display:flex;flex-direction:column;gap:14px;width:100%}
 .log-entry{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:8px;padding:12px 14px}
 .log-ver{font-family:'Orbitron',sans-serif;font-size:clamp(8px,2vw,11px);font-weight:700;letter-spacing:.12em;color:#00f0ff;margin-bottom:7px}
 .log-list{font-family:'Share Tech Mono',monospace;font-size:clamp(7px,1.6vw,9px);color:rgba(255,255,255,.45);line-height:1.8;padding-left:14px}
@@ -148,9 +146,7 @@ canvas{display:block;position:fixed;top:0;left:0;width:100%;height:100%}
 .coll-header{display:flex;align-items:center;justify-content:space-between;padding:16px 18px 10px;flex-shrink:0;border-bottom:1px solid rgba(255,255,255,.06)}
 .coll-title{font-size:clamp(13px,3.5vw,18px);font-weight:900;letter-spacing:.2em;color:#fff}
 .coll-count{font-family:'Share Tech Mono',monospace;font-size:clamp(7px,1.6vw,9px);color:rgba(255,255,255,.3);letter-spacing:.1em}
-.coll-body{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;touch-action:pan-y!important;padding:12px 14px 24px;min-height:0}
-.coll-body::-webkit-scrollbar{width:3px}
-.coll-body::-webkit-scrollbar-thumb{background:rgba(255,255,255,.15);border-radius:2px}
+.coll-body{flex:1;overflow-y:scroll;-webkit-overflow-scrolling:touch;touch-action:pan-y;padding:12px 14px 24px}
 .coll-rar-group{margin-bottom:18px}
 .coll-rar-label{font-family:'Share Tech Mono',monospace;font-size:clamp(7px,1.6vw,9px);letter-spacing:.22em;color:rgba(255,255,255,.3);text-transform:uppercase;margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid rgba(255,255,255,.05)}
 .coll-row{display:flex;flex-wrap:wrap;gap:8px}
@@ -160,9 +156,29 @@ canvas{display:block;position:fixed;top:0;left:0;width:100%;height:100%}
 .coll-card{flex:0 0 auto;width:clamp(68px,17vw,102px);border-radius:10px;border:1.5px solid rgba(255,255,255,.1);background:rgba(10,10,28,.8);padding:7px 5px 6px;display:flex;flex-direction:column;align-items:center;gap:3px;position:relative;overflow:hidden}
 
 /* ── EXIT BUTTONS ── */
-.screen-back{font-family:'Orbitron',sans-serif;font-size:clamp(7px,1.8vw,10px);font-weight:700;letter-spacing:.15em;color:rgba(255,255,255,.38);background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);padding:7px 16px;border-radius:8px;cursor:pointer;transition:all .15s;width:auto;align-self:flex-start}
+.screen-back{font-family:'Orbitron',sans-serif;font-size:clamp(7px,1.8vw,10px);font-weight:700;letter-spacing:.15em;color:rgba(255,255,255,.38);background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);padding:8px 18px;border-radius:8px;cursor:pointer;transition:all .15s;margin-top:4px;width:100%}
 .screen-back:active{transform:scale(.95);background:rgba(255,255,255,.1)}
 
+/* ── ONLINE LOBBY ── */
+.lobby-inner{display:flex;flex-direction:column;align-items:center;padding:24px 20px;background:rgba(2,2,10,.88);border:1px solid rgba(255,255,255,.09);border-radius:16px;max-width:340px;width:92%;gap:14px}
+.lobby-title{font-size:clamp(15px,3.8vw,20px);font-weight:900;letter-spacing:.2em;color:#fff}
+.lobby-sub{font-family:'Share Tech Mono',monospace;font-size:clamp(7px,1.6vw,9px);color:rgba(255,255,255,.25);letter-spacing:.1em;text-align:center}
+.lobby-opts{display:flex;flex-direction:column;gap:8px;width:100%}
+.lobby-section{display:flex;flex-direction:column;gap:8px;width:100%;padding:14px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:10px}
+.lobby-label{font-family:'Share Tech Mono',monospace;font-size:clamp(6px,1.4vw,8px);color:rgba(255,255,255,.3);letter-spacing:.16em;text-transform:uppercase;margin-bottom:2px}
+.lobby-code{font-family:'Share Tech Mono',monospace;font-size:clamp(18px,5vw,28px);font-weight:700;letter-spacing:.28em;color:#00f0ff;text-shadow:0 0 16px #00f0ff66;text-align:center;padding:8px 0;min-height:2em;display:flex;align-items:center;justify-content:center}
+.lobby-input{width:100%;background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.15);border-radius:7px;color:#00f0ff;font-family:'Share Tech Mono',monospace;font-size:clamp(14px,3.5vw,20px);font-weight:700;letter-spacing:.22em;text-align:center;padding:10px 8px;outline:none;text-transform:uppercase}
+.lobby-input:focus{border-color:#00f0ff66}
+.lobby-input::placeholder{color:rgba(255,255,255,.18);font-size:.7em;letter-spacing:.1em}
+.lobby-status{font-family:'Share Tech Mono',monospace;font-size:clamp(7px,1.6vw,9px);text-align:center;min-height:1.4em;transition:color .2s;letter-spacing:.08em}
+.lobby-status.ok{color:#3dffa0}.lobby-status.err{color:#ff4d6d}.lobby-status.wait{color:#ffd166}
+.lbtn{font-family:'Orbitron',sans-serif;font-size:clamp(9px,2.2vw,11px);font-weight:700;letter-spacing:.18em;text-transform:uppercase;border:none;padding:12px 0;border-radius:8px;cursor:pointer;width:100%;transition:transform .1s,opacity .15s}
+.lbtn:active{transform:scale(.95)}.lbtn:disabled{opacity:.35;cursor:not-allowed}
+.lbtn-host{color:#02020a;background:linear-gradient(135deg,#00f0ff,#0070ff);box-shadow:0 0 18px rgba(0,200,255,.28)}
+.lbtn-join{color:#02020a;background:linear-gradient(135deg,#ff2d78,#c0006a);box-shadow:0 0 18px rgba(255,45,120,.28)}
+.lbtn-back{color:rgba(255,255,255,.4);background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);font-size:clamp(7px,1.8vw,10px)}
+.copy-hint{font-family:'Share Tech Mono',monospace;font-size:clamp(6px,1.3vw,7.5px);color:rgba(255,255,255,.18);letter-spacing:.06em;text-align:center}
+/* ── HUD + TAUNT ── */
 /* HUD + TAUNT */
 #hud{position:fixed;inset:0;pointer-events:none;z-index:5}
 .hbar{position:absolute;display:flex;gap:4px;align-items:center}
@@ -177,7 +193,7 @@ canvas{display:block;position:fixed;top:0;left:0;width:100%;height:100%}
 <div class="scr" id="ss">
   <div class="title-layout">
     <div class="title-left">
-      <div class="logo"><span class="logo-line">RIMA</span><br><span class="logo-line">NAVE</span></div>
+      <div class="logo">RIMANAVE</div>
       <div class="logo-sub">ABILITY PONG</div>
       <div class="title-bars">
         <div class="tbar c1"></div>
@@ -188,7 +204,7 @@ canvas{display:block;position:fixed;top:0;left:0;width:100%;height:100%}
     </div>
     <div class="title-right">
       <button class="menu-btn primary" id="btnSingle">SINGLEPLAYER</button>
-      <button class="menu-btn plain" id="btnMulti">MULTIPLAYER</button>
+      <button class="menu-btn plain" id="btnMulti">ONLINE MULTIPLAYER</button>
       <button class="menu-btn secondary" id="btnLog">CHANGELOG</button>
       <button class="menu-btn secondary" id="btnColl">CARD COLLECTION</button>
     </div>
@@ -265,7 +281,7 @@ canvas{display:block;position:fixed;top:0;left:0;width:100%;height:100%}
         </ul>
       </div>
     </div>
-    <button class="menu-btn secondary" id="logBack" style="flex-shrink:0;width:100%">BACK</button>
+    <button class="menu-btn secondary" id="logBack">BACK</button>
   </div>
 </div>
 
@@ -330,6 +346,32 @@ canvas{display:block;position:fixed;top:0;left:0;width:100%;height:100%}
     <button class="coll-back" id="collBack">&#10005; CLOSE</button>
   </div>
   <div class="coll-body" id="collBody"></div>
+</div>
+
+<!-- ONLINE LOBBY -->
+<div class="scr gone" id="lobbyScr">
+  <div class="lobby-inner">
+    <div class="lobby-title">ONLINE MULTIPLAYER</div>
+    <div class="lobby-sub">Uses PeerJS — works directly between browsers<br>No account or server needed</div>
+    <div class="lobby-opts">
+      <!-- HOST -->
+      <div class="lobby-section" id="hostSection">
+        <div class="lobby-label">Host a game</div>
+        <div class="lobby-code" id="hostCode"><span style="color:rgba(255,255,255,.2);font-size:.5em;letter-spacing:.1em">generating…</span></div>
+        <div class="copy-hint">Share this code with your opponent</div>
+        <button class="lbtn lbtn-host" id="copyCodeBtn" disabled>COPY CODE</button>
+        <div class="lobby-status wait" id="hostStatus">Waiting for opponent to join…</div>
+      </div>
+      <!-- JOIN -->
+      <div class="lobby-section">
+        <div class="lobby-label">Join a game</div>
+        <input class="lobby-input" id="joinInput" type="text" maxlength="20" placeholder="Enter room code" autocomplete="off" spellcheck="false"/>
+        <button class="lbtn lbtn-join" id="joinBtn">JOIN</button>
+        <div class="lobby-status" id="joinStatus"></div>
+      </div>
+    </div>
+    <button class="lbtn lbtn-back" id="lobbyBack">← BACK TO MENU</button>
+  </div>
 </div>
 
 <div id="countdown"><span class="cd-num" id="cdNum"></span></div>
@@ -449,14 +491,7 @@ function onT(e){e.preventDefault();for(var i=0;i<e.changedTouches.length;i++){va
 function offT(e){e.preventDefault();for(var i=0;i<e.changedTouches.length;i++){delete AT[e.changedTouches[i].identifier];}}
 gc.addEventListener('touchstart',onT,{passive:false});gc.addEventListener('touchmove',onT,{passive:false});
 gc.addEventListener('touchend',offT,{passive:false});gc.addEventListener('touchcancel',offT,{passive:false});
-document.addEventListener('touchmove',function(e){
-  var t=e.target;
-  while(t&&t!==document){
-    if(t.classList&&(t.classList.contains('log-entries')||t.classList.contains('coll-body')||t.classList.contains('crow')))return;
-    t=t.parentNode;
-  }
-  e.preventDefault();
-},{passive:false});
+document.addEventListener('touchmove',function(e){e.preventDefault();},{passive:false});
 function getTX(isBot){for(var id in AT){var t=AT[id];if(isBot?t.y>H/2:t.y<=H/2)return t.x;}return null;}
 
 // PARTICLES
@@ -545,10 +580,10 @@ DmgLabel.prototype.draw=function(){
     // Over cap - animated rainbow
     var hue=(Date.now()*.5+this.tick*8)%360;
     col='hsl('+hue+',100%,65%)';
-  }else if(spd>=34){col='#ff2d78';}
-  else if(spd>=26){col='#ff8800';}
-  else if(spd>=18){col='#ffdd00';}
-  else if(spd>=8){col='#aaffaa';}
+  }else if(spd>34){col='#ff2d78';}
+  else if(spd>26){col='#ff8800';}
+  else if(spd>18){col='#ffdd00';}
+  else if(spd>10){col='rgb(220,180,60)';}
   else{col='rgba(180,200,180,1)';}
   var fs=this.isParry?Math.max(22,Math.round(30*SX)):this.isCrit?Math.max(18,Math.round(26*SX)):Math.max(16,Math.min(Math.round((14+Math.min(spd,50)/3)*SX),Math.round(28*SX)));
   var scale=1;
@@ -581,11 +616,10 @@ var TAUNTS_I=['PATHETIC','Cannot touch me','I live here.','LOL','Forever, I can.
 var tauntEl=document.getElementById('taunt');
 var tauntTmr=0;
 function showTaunt(diff){
-  if(!G||!G.run)return; // only show during active gameplay
   var pool=diff==='insane'?TAUNTS_I:TAUNTS_H;
   tauntEl.textContent=pool[Math.floor(Math.random()*pool.length)];
   tauntEl.style.top=(H*.3)+'px';tauntEl.style.opacity='1';
-  clearTimeout(tauntTmr);tauntTmr=setTimeout(function(){tauntEl.style.opacity='0';tauntEl.textContent='';},2200);
+  clearTimeout(tauntTmr);tauntTmr=setTimeout(function(){tauntEl.style.opacity='0';},2200);
 }
 
 var CFG={BS:13,SPD0:10,SPDMAX:26,SPDINC:.38,PW:155,PH:17,PM:82,TRL:14,PC:18};
@@ -1331,7 +1365,6 @@ function goDraft(){
   });
 }
 function goDraftMode(){
-  document.getElementById('pauseBtn').classList.remove('show');
   document.getElementById('st1').textContent='Pick 3 abilities';
   document.getElementById('st2').textContent=GCFG.cpu!=='off'?'CPU picks randomly':'Pick 3 abilities';
   buildDraft();renderDraft();
@@ -1393,7 +1426,7 @@ function showWin(g){
   bd.innerHTML=html;
   document.getElementById('wab').innerHTML=g.ab[wi].map(function(a){return'<div class="watag">'+a.name+'</div>';}).join('');
   document.getElementById('hud').style.display='none';
-  tauntEl.style.opacity='0';tauntEl.textContent='';clearTimeout(tauntTmr);
+  tauntEl.style.opacity='0';
   fadeIn(document.getElementById('ws'));
   if(g.cpu!=='off'&&wi===1&&(g.cpu==='hard'||g.cpu==='insane'))setTimeout(function(){showTaunt(g.cpu);},600);
 }
@@ -1405,7 +1438,7 @@ function playAgain(){
   });
 }
 function wire(id,fn){var el=document.getElementById(id);if(!el)return;el.addEventListener('click',fn);el.addEventListener('touchend',function(e){e.preventDefault();fn();});}
-wire('btnMulti',goDraft);
+wire('btnMulti', goOnlineLobby);
 wire('btnSingle',function(){fadeOut(document.getElementById('ss'),function(){fadeIn(document.getElementById('diffscr'));});});
 wire('diffBack',function(){fadeOut(document.getElementById('diffscr'),function(){fadeIn(document.getElementById('ss'));});});
 wire('btnLog',function(){fadeOut(document.getElementById('ss'),function(){fadeIn(document.getElementById('logscr'));});});
@@ -1415,7 +1448,6 @@ wire('draftBack',function(){
   fadeOut(document.getElementById('ds'),function(){
     document.getElementById('hud').style.display='none';
     _revealed={0:false,1:false};
-    tauntEl.style.opacity='0';tauntEl.textContent='';clearTimeout(tauntTmr);
     fadeIn(document.getElementById('ss'));
   });
 });
@@ -1432,7 +1464,6 @@ document.getElementById('quitBtn').addEventListener('click',function(){
   paused=false;
   if(G){G.paused=false;}
   G=null;
-  tauntEl.style.opacity='0';tauntEl.textContent='';clearTimeout(tauntTmr);
   fadeIn(document.getElementById('ss'));
 });
 function togglePause(){
@@ -1484,6 +1515,283 @@ function openCollection(backFn){
 }
 var lb1=document.getElementById('lb1');lb1.addEventListener('click',function(){lockIn(0);});lb1.addEventListener('touchend',function(e){e.preventDefault();lockIn(0);});
 var lb2=document.getElementById('lb2');lb2.addEventListener('click',function(){lockIn(1);});lb2.addEventListener('touchend',function(e){e.preventDefault();lockIn(1);});
+
+// ═══════════════════════════════════════════════════════
+// PEERJS ONLINE MULTIPLAYER
+// ═══════════════════════════════════════════════════════
+var NET = { peer: null, conn: null, role: null, connected: false, _myCode: null };
+
+function goOnlineLobby() {
+  fadeOut(document.getElementById('ss'), function() {
+    fadeIn(document.getElementById('lobbyScr'));
+    initNetPeer();
+  });
+}
+
+function initNetPeer() {
+  if (NET.peer) { try { NET.peer.destroy(); } catch(e){} }
+  NET.peer = null; NET.conn = null; NET.role = null; NET.connected = false;
+  document.getElementById('hostCode').innerHTML = '<span style="color:rgba(255,255,255,.2);font-size:.5em;letter-spacing:.1em">generating…</span>';
+  document.getElementById('hostStatus').textContent = 'Waiting for opponent to join…';
+  document.getElementById('hostStatus').className = 'lobby-status wait';
+  document.getElementById('copyCodeBtn').disabled = true;
+  document.getElementById('joinStatus').textContent = '';
+  document.getElementById('joinInput').value = '';
+  document.getElementById('joinBtn').disabled = false;
+
+  // Short random 6-char code = the Peer ID itself (easy to share)
+  var chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  var code = '';
+  for (var i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
+  NET._myCode = code;
+
+  try {
+    NET.peer = new Peer(code, { debug: 0 });
+  } catch(e) {
+    showLobbyErr('PeerJS failed to initialise. Reload and try again.');
+    return;
+  }
+
+  NET.peer.on('open', function(id) {
+    NET._myCode = id; // use actual assigned id (may differ if collision)
+    var display = id.length > 8 ? id.slice(0,4)+'-'+id.slice(4,8) : id;
+    document.getElementById('hostCode').textContent = display;
+    document.getElementById('copyCodeBtn').disabled = false;
+  });
+
+  NET.peer.on('error', function(err) {
+    var msgs = {
+      'peer-unavailable': 'Room not found. Check the code.',
+      'network': 'Network error — check your connection.',
+      'browser-incompatible': 'Your browser doesn\'t support WebRTC.',
+      'unavailable-id': 'Code taken, retrying…'
+    };
+    var msg = msgs[err.type] || 'Error: ' + err.type;
+    showLobbyErr(msg);
+    document.getElementById('joinBtn').disabled = false;
+    if (err.type === 'unavailable-id') setTimeout(initNetPeer, 600);
+  });
+
+  // HOST: incoming connection
+  NET.peer.on('connection', function(conn) {
+    if (NET.connected) { conn.close(); return; }
+    NET.role = 'host';
+    NET.conn = conn;
+    document.getElementById('hostStatus').textContent = 'Opponent connected! Starting…';
+    document.getElementById('hostStatus').className = 'lobby-status ok';
+    setupConn(conn, function() {
+      NET.connected = true;
+      setTimeout(function() {
+        GCFG.cpu = 'off';
+        fadeOut(document.getElementById('lobbyScr'), function() {
+          document.getElementById('p2name').textContent = 'ONLINE P2';
+          goDraftOnline();
+        });
+      }, 700);
+    });
+  });
+}
+
+function showLobbyErr(msg) {
+  document.getElementById('hostStatus').textContent = msg;
+  document.getElementById('hostStatus').className = 'lobby-status err';
+  document.getElementById('joinStatus').textContent = msg;
+  document.getElementById('joinStatus').className = 'lobby-status err';
+}
+
+function setupConn(conn, onOpen) {
+  conn.on('open', function() { NET.connected = true; if (onOpen) onOpen(); });
+  conn.on('data', function(data) { handleNetData(data); });
+  conn.on('close', function() {
+    NET.connected = false;
+    if (G && G._online) { G.run = false; G = null; alert('Opponent disconnected.'); fadeIn(document.getElementById('ss')); }
+  });
+  conn.on('error', function(e) { console.warn('conn error', e); });
+}
+
+function netSend(data) {
+  if (NET.conn && NET.conn.open) try { NET.conn.send(data); } catch(e) {}
+}
+
+// COPY CODE button
+document.getElementById('copyCodeBtn').addEventListener('click', function() {
+  var code = NET._myCode || '';
+  if (navigator.clipboard) { navigator.clipboard.writeText(code).catch(function(){}); }
+  else { var ta=document.createElement('textarea');ta.value=code;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta); }
+  var btn = document.getElementById('copyCodeBtn');
+  var orig = btn.textContent; btn.textContent = '✓ COPIED';
+  setTimeout(function() { btn.textContent = orig; }, 1600);
+});
+
+// JOIN button
+document.getElementById('joinBtn').addEventListener('click', function() {
+  var raw = document.getElementById('joinInput').value.trim().toUpperCase().replace(/[-\s]/g,'');
+  if (!raw || raw.length < 4) { document.getElementById('joinStatus').textContent='Enter a room code.'; document.getElementById('joinStatus').className='lobby-status err'; return; }
+  if (!NET.peer || !NET.peer.id) { document.getElementById('joinStatus').textContent='Still connecting… wait a moment.'; document.getElementById('joinStatus').className='lobby-status err'; return; }
+  document.getElementById('joinStatus').textContent = 'Connecting…';
+  document.getElementById('joinStatus').className = 'lobby-status wait';
+  document.getElementById('joinBtn').disabled = true;
+  NET.role = 'guest';
+  var conn = NET.peer.connect(raw, { reliable: true, serialization: 'json' });
+  NET.conn = conn;
+  setupConn(conn, function() {
+    document.getElementById('joinStatus').textContent = '✓ Connected! Waiting for host…';
+    document.getElementById('joinStatus').className = 'lobby-status ok';
+    NET.connected = true;
+  });
+  setTimeout(function() {
+    if (!NET.connected) {
+      document.getElementById('joinStatus').textContent = 'Could not connect. Check the code.';
+      document.getElementById('joinStatus').className = 'lobby-status err';
+      document.getElementById('joinBtn').disabled = false;
+      NET.role = null; if(NET.conn) { try { NET.conn.close(); } catch(e){} NET.conn = null; }
+    }
+  }, 9000);
+});
+
+// LOBBY BACK button
+document.getElementById('lobbyBack').addEventListener('click', function() {
+  if (NET.peer) { try { NET.peer.destroy(); } catch(e){} NET.peer = null; }
+  NET.conn = null; NET.connected = false; NET.role = null;
+  fadeOut(document.getElementById('lobbyScr'), function() { fadeIn(document.getElementById('ss')); });
+});
+
+// ── ONLINE DRAFT ─────────────────────────────────────────────
+var _netLockedAbils = null;
+
+function goDraftOnline() {
+  _netLockedAbils = null;
+  GCFG.cpu = 'off';
+  document.getElementById('st1').textContent = NET.role === 'host' ? 'Pick 3 abilities' : 'Waiting for host…';
+  document.getElementById('st2').textContent = NET.role === 'guest' ? 'Pick 3 abilities' : 'Waiting for opponent…';
+  buildDraft(); renderDraft();
+  if (NET.role === 'host') {
+    document.getElementById('cr2').innerHTML = '<div style="font-family:Share Tech Mono,monospace;font-size:9px;color:rgba(255,255,255,.2);letter-spacing:.1em;padding:20px;text-align:center">OPPONENT IS PICKING…</div>';
+    document.getElementById('lb2').disabled = true; document.getElementById('lb2').style.opacity = '0.25';
+  } else {
+    document.getElementById('cr1').innerHTML = '<div style="font-family:Share Tech Mono,monospace;font-size:9px;color:rgba(255,255,255,.2);letter-spacing:.1em;padding:20px;text-align:center">OPPONENT IS PICKING…</div>';
+    document.getElementById('lb1').disabled = true; document.getElementById('lb1').style.opacity = '0.25';
+  }
+  fadeIn(document.getElementById('ds'));
+}
+
+// Override lockIn for online mode
+var _origLockIn = lockIn;
+function lockIn(pi) {
+  if (!NET.connected) { _origLockIn(pi); return; }
+  var myPi = NET.role === 'host' ? 0 : 1;
+  if (pi !== myPi) return;
+  if (DS[pi].length < 3 || DL[pi]) return;
+  DL[pi] = true;
+  document.getElementById(pi===0?'st1':'st2').textContent = '✓ Ready!';
+  updLock(pi);
+  var cont = document.getElementById(pi===0?'cr1':'cr2'), cards = cont.querySelectorAll('.card');
+  for (var i=0;i<cards.length;i++) if (DS[pi].indexOf(i)<0) cards[i].classList.add('lck');
+  _netLockedAbils = DS[pi].map(function(i) { return DC[pi][i]; });
+  if (NET.role === 'host') {
+    netSend({ type: 'host_ready', abils: _netLockedAbils });
+    document.getElementById('st2').textContent = 'Waiting for opponent…';
+  } else {
+    netSend({ type: 'guest_ready', abils: _netLockedAbils });
+    document.getElementById('st1').textContent = 'Waiting for host…';
+  }
+}
+
+// ── NET DATA HANDLER ──────────────────────────────────────────
+var _hostAbils = null;
+
+function handleNetData(data) {
+  if (!data || !data.type) return;
+  switch(data.type) {
+    case 'host_ready':
+      _hostAbils = data.abils;
+      if (_netLockedAbils && NET.role === 'guest') {
+        // Guest already ready, re-send
+        netSend({ type: 'guest_ready', abils: _netLockedAbils });
+      }
+      break;
+    case 'guest_ready':
+      if (NET.role !== 'host') break;
+      var a1 = _netLockedAbils || [], a2 = data.abils || [];
+      netSend({ type: 'start_match', a1: a1, a2: a2 });
+      startOnlineMatch(a1, a2);
+      break;
+    case 'start_match':
+      if (NET.role !== 'guest') break;
+      startOnlineMatch(data.a1, data.a2);
+      break;
+    case 'game_state':
+      if (NET.role !== 'guest' || !G) break;
+      applyNetState(data);
+      break;
+    case 'guest_paddle':
+      if (NET.role !== 'host' || !G || !G.p2) break;
+      G.p2.x = data.x * W;
+      break;
+    case 'score_event':
+      if (NET.role !== 'guest' || !G) break;
+      spawnP(data.bx * W, data.by * H, data.col, 26);
+      break;
+  }
+}
+
+function startOnlineMatch(a1, a2) {
+  fadeOut(document.getElementById('ds'), function() {
+    document.getElementById('hud').style.display = 'block';
+    var el1=document.getElementById('h1'), el2=document.getElementById('h2');
+    function mkChips(abs){return abs.map(function(a){var rc=rarCol(a.rar);return'<div class="hchip" style="color:'+rc+';border-color:'+rc+'44">'+a.name+'</div>';}).join('');}
+    el1.innerHTML = mkChips(a1); el2.innerHTML = mkChips(a2);
+    G = new Game(a1, a2, 'off');
+    G._online = true;
+    G._isHost = NET.role === 'host';
+    if (!RAF) loop();
+    document.getElementById('pauseBtn').classList.add('show');
+    startCountdown(function() { G.countdownDone = true; });
+  });
+}
+
+// Patch upd for online sync
+var _origGameUpd = Game.prototype.upd;
+Game.prototype.upd = function() {
+  if (!this._online) { _origGameUpd.call(this); return; }
+  if (this._isHost) {
+    _origGameUpd.call(this);
+    if (!this.run || !this.countdownDone || this.paused) return;
+    this._netTick = (this._netTick||0) + 1;
+    if (this._netTick % 2 === 0 && this.ball) {
+      netSend({
+        type: 'game_state',
+        b: { x: this.ball.x/W, y: this.ball.y/H, vx: this.ball.vx, vy: this.ball.vy, spd: this.ball.spd, crit: this.ball.crit, r: this.ball.r/W },
+        p1x: this.p1.x/W, p2x: this.p2.x/W,
+        sc: this.sc.slice(), srv: this.srv,
+        parryT: this.parryFlashT, sdOn: this.sdOn, run: this.run
+      });
+    }
+  } else {
+    // Guest: move p2 paddle, send to host; apply received state in applyNetState
+    if (!this.run || !this.countdownDone || this.paused) return;
+    for (var _i=0;_i<BGSH.length;_i++) BGSH[_i].upd();
+    var prevX = this.p2.x;
+    var tx = getTX(false);
+    if (tx !== null) this.p2.x = Math.max(this.p2.w/2, Math.min(W-this.p2.w/2, tx));
+    this.p2.vx = this.p2.x - prevX;
+    this._netTick = (this._netTick||0) + 1;
+    if (this._netTick % 2 === 0) netSend({ type: 'guest_paddle', x: this.p2.x/W });
+  }
+};
+
+function applyNetState(data) {
+  if (!G || !G.ball) return;
+  var b = data.b;
+  G.ball.x = b.x*W; G.ball.y = b.y*H;
+  G.ball.vx = b.vx; G.ball.vy = b.vy; G.ball.spd = b.spd; G.ball.crit = b.crit; G.ball.r = b.r*W;
+  if (G.p1) G.p1.x = data.p1x*W;
+  if (G.p2) G.p2.x = data.p2x*W;
+  G.sc[0] = data.sc[0]; G.sc[1] = data.sc[1];
+  G.srv = data.srv; G.parryFlashT = data.parryT; G.sdOn = data.sdOn;
+  if (!data.run && G.run) { G.run = false; var self=G; setTimeout(function(){showWin(self);},680); }
+}
+
 loop();
 </script>
 </body>
